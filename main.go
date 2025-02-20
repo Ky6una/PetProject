@@ -6,22 +6,6 @@ import (
 	"net/http"
 )
 
-var task string
-
-type requestBody struct {
-	Message string `json:"message"`
-}
-
-func GetHandler(w http.ResponseWriter, r *http.Request) {
-	var tasks []Task
-	if err := DB.Find(&tasks).Error; err != nil {
-		http.Error(w, "Failed to get tasks list", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tasks)
-}
-
 func PostHandler(w http.ResponseWriter, r *http.Request) {
 	var t Task
 	if arr := json.NewDecoder(r.Body).Decode(&t); arr != nil {
@@ -48,6 +32,68 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 	//fmt.Fprintf(w, "Request: %s sent succesfully", task)
 }
 
+func GetHandler(w http.ResponseWriter, r *http.Request) {
+	var tasks []Task
+	if err := DB.Find(&tasks).Error; err != nil {
+		http.Error(w, "Failed to get tasks list", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tasks)
+}
+
+func PatchHandler(w http.ResponseWriter, r *http.Request) {
+
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var task Task
+	if err := DB.First(&task, id).Error; err != nil {
+		http.Error(w, "Failed to get task", http.StatusNotFound)
+		return
+	}
+
+	var updateData map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&updateData); err != nil {
+		http.Error(w, "Failed to decode update", http.StatusBadRequest)
+		return
+	}
+
+	allowedFields := map[string]bool{
+		"task":    true,
+		"is_done": true,
+	}
+	for key := range allowedFields {
+		if !allowedFields[key] {
+			delete(updateData, key)
+		}
+	}
+	if err := DB.Model(&task).Updates(updateData).Error; err != nil {
+		http.Error(w, "Failed to update task", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(task)
+}
+
+func DeleteHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var task Task
+
+	if err := DB.First(&task, id).Error; err != nil {
+		http.Error(w, "Failed to get task", http.StatusNotFound)
+		return
+	}
+
+	if err := DB.Delete(&task).Error; err != nil {
+		http.Error(w, "Failed to delete task", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+}
+
 func main() {
 
 	InitDB()
@@ -55,7 +101,10 @@ func main() {
 	DB.AutoMigrate(&Task{})
 
 	router := mux.NewRouter()
-	router.HandleFunc("/api/message", GetHandler).Methods("GET")
-	router.HandleFunc("/api/message", PostHandler).Methods("POST")
+	router.HandleFunc("/api/message", GetHandler).Methods("GET")            //C
+	router.HandleFunc("/api/message", PostHandler).Methods("POST")          //R
+	router.HandleFunc("/api/message/{id}", PatchHandler).Methods("PATCH")   //U
+	router.HandleFunc("/api/message/{id}", DeleteHandler).Methods("DELETE") //D
+
 	http.ListenAndServe(":8080", router)
 }
